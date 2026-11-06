@@ -10,7 +10,8 @@ html,body{margin:0;height:100%;background:#05010a;overflow:hidden;touch-action:n
 #game{width:100vw;height:100vh;height:100dvh}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
-<script src="player.js?v=3"></script>
+<script src="player.js?v=4"></script>
+<script src="vehicle.js?v=4"></script>
 </head>
 <body>
 <div id="game"></div>
@@ -67,7 +68,7 @@ class Menu extends Phaser.Scene{
       this.cameras.main.fadeOut(400,0,0,0);
       this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
     });
-    this.add.text(cx,h-18,'v0.3 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
+    this.add.text(cx,h-18,'v0.4 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
   }
   update(){
     const {w,h,y0,g}=this,cx=w/2;
@@ -169,6 +170,10 @@ class Game extends Phaser.Scene{
     // Герой: PlayerController (физика) + CharacterAnimator (внешний вид) — см. player.js
     this.pc=new PlayerController(this,600,1500,walls);
     const p=this.player=this.pc.sprite;
+    // Машины: VehicleManager — см. vehicle.js
+    this.zoomFn=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
+    this.vm=new VehicleManager(this,walls,this.pc);
+    this.vm.spawn('nova',780,1500,0);
 
     const cam=this.cameras.main;
     const zoom=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
@@ -177,7 +182,7 @@ class Game extends Phaser.Scene{
     this.scale.on('resize',rz);
     this.events.once('shutdown',()=>this.scale.off('resize',rz));
 
-    this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT'):null;
+    this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,E'):null;
     this.scene.launch('UI');
   }
   update(t){
@@ -187,9 +192,15 @@ class Game extends Phaser.Scene{
       if(k.A.isDown||k.LEFT.isDown)vx=-1;if(k.D.isDown||k.RIGHT.isDown)vx=1;
       if(k.W.isDown||k.UP.isDown)vy=-1;if(k.S.isDown||k.DOWN.isDown)vy=1;
     }
-    const run=(ui&&ui.run)||(k&&k.SHIFT.isDown);
-    this.pc.update({x:vx,y:vy,run},Math.min(this.game.loop.delta/1000,0.05));
-    if(ui&&ui.st)ui.st.setText(this.pc.state);
+    const dt=Math.min(this.game.loop.delta/1000,0.05);
+    this.vm.update(ui&&ui.vui,k,dt);
+    if(this.vm.driving){
+      if(ui&&ui.st)ui.st.setText('DRIVING');
+    }else{
+      const run=(ui&&ui.run)||(k&&k.SHIFT.isDown);
+      this.pc.update({x:vx,y:vy,run},dt);
+      if(ui&&ui.st)ui.st.setText(this.pc.state);
+    }
     const w=this.waves;w.clear();w.lineStyle(2,0x00f0ff,0.45);
     for(let r=0;r<6;r++){
       const y=1930+r*60;w.beginPath();w.moveTo(0,y);
@@ -203,7 +214,7 @@ class UI extends Phaser.Scene{
   constructor(){super('UI')}
   create(){
     this.vec=new Phaser.Math.Vector2();this.pid=null;this.run=false;
-    this.input.addPointer(2);
+    this.input.addPointer(3);
     this.add.particles(0,0,'drop',{x:{min:-100,max:2200},y:-20,lifespan:1200,speedY:{min:600,max:800},speedX:{min:-150,max:-100},quantity:2,frequency:40,alpha:{start:0.35,end:0},blendMode:'ADD'}).setDepth(-1);
     this.base=this.add.circle(0,0,62,0x000000,0.35).setStrokeStyle(3,0x00f0ff,0.8);
     this.thumb=this.add.circle(0,0,28,0xff2bd6,0.85);
@@ -223,8 +234,9 @@ class UI extends Phaser.Scene{
       this.rb.setStrokeStyle(3,this.run?0xff2bd6:0x00f0ff).setFillStyle(this.run?0xff2bd6:0x000000,this.run?0.35:0.5);
     });
 
+    this.vui=new VehicleUI(this);
     this.input.on('pointerdown',(p,over)=>{
-      if(over.length||this.pid!==null)return;
+      if(over.length||this.pid!==null||(this.vui&&this.vui.mode==='car'))return;
       if(p.x>this.scale.width*0.6)return;
       this.pid=p.id;this.ox=p.x;this.oy=p.y;
       this.base.setPosition(p.x,p.y);this.thumb.setPosition(p.x,p.y);
@@ -247,6 +259,7 @@ class UI extends Phaser.Scene{
     const w=this.scale.width,h=this.scale.height;
     this.mb.setPosition(w-56,34);this.mt.setPosition(w-56,34);
     this.rb.setPosition(w-80,h-110);this.rt.setPosition(w-80,h-110);
+    if(this.vui)this.vui.layout(w,h);
     if(this.pid===null){
       this.base.setPosition(100,h-120).setAlpha(0.5);
       this.thumb.setPosition(100,h-120).setAlpha(0.6);
