@@ -21,7 +21,6 @@ const FONT='"Arial Black",Impact,sans-serif';
 function makeTextures(s){
   if(s.textures.exists('hero'))return;
   const g=s.make.graphics({add:false});
-  // ГЕРОЙ (временный, позже заменим на основе фото)
   g.fillStyle(0x000000,0.45).fillEllipse(24,58,30,10);
   g.fillStyle(0x1a1a2e).fillRect(16,40,7,16).fillRect(25,40,7,16);
   g.fillStyle(0xffffff).fillRect(15,54,9,4).fillRect(24,54,9,4);
@@ -59,7 +58,7 @@ class Menu extends Phaser.Scene{
     bg.fillStyle(0xffb000,0.5).fillCircle(cx,sy-r*0.3,r*0.6);
     for(let i=0;i<6;i++)bg.fillStyle(0x12002a).fillRect(cx-r,sy+r*0.05+i*r*0.17,r*2,2+i*2);
     this.g=this.add.graphics();
-    const t1=this.add.text(cx,h*0.16,'NEON:',{fontFamily:FONT,fontSize:Math.round(50*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',18,true,true);
+    this.add.text(cx,h*0.16,'NEON:',{fontFamily:FONT,fontSize:Math.round(50*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',18,true,true);
     const t2=this.add.text(cx,h*0.16+58*s,'BLOODLINE',{fontFamily:FONT,fontSize:Math.round(46*s)+'px',color:'#ffd6f6'}).setOrigin(.5).setShadow(0,0,'#ff0055',22,true,true);
     this.add.text(cx,h*0.16+104*s,'V I C E   B A Y',{fontFamily:FONT,fontSize:Math.round(16*s)+'px',color:'#00f0ff'}).setOrigin(.5);
     this.tweens.add({targets:t2,alpha:{from:1,to:0.55},duration:90,yoyo:true,repeat:-1,repeatDelay:2200});
@@ -74,7 +73,7 @@ class Menu extends Phaser.Scene{
       this.cameras.main.fadeOut(400,0,0,0);
       this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
     });
-    this.add.text(cx,h-18,'v0.1 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
+    this.add.text(cx,h-18,'v0.2 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
   }
   update(){
     const {w,h,y0,g}=this,cx=w/2;
@@ -110,6 +109,9 @@ class Game extends Phaser.Scene{
     gr.lineStyle(3,0xff2bd6,0.8).lineBetween(0,TOP,W,TOP);
     gr.fillStyle(0x041a2e).fillRect(0,1900,W,H-1900);
     gr.lineStyle(3,0x00f0ff,0.9).lineBetween(0,1900,W,1900);
+    // NEW: видимая неоновая граница карты
+    gr.lineStyle(12,0xff2bd6,0.15).strokeRect(4,4,W-8,H-8);
+    gr.lineStyle(3,0xff2bd6,0.9).strokeRect(2,2,W-4,H-4);
     this.waves=this.add.graphics().setDepth(-9);
 
     const walls=this.physics.add.staticGroup();
@@ -138,7 +140,7 @@ class Game extends Phaser.Scene{
           .setOrigin(.5).setShadow(0,0,hex(c),12,true,true).setDepth(y+h+0.5);
         if(rnd.frac()<0.4)this.tweens.add({targets:t,alpha:0.3,duration:80,yoyo:true,repeat:-1,repeatDelay:rnd.between(1200,4000)});
       }
-      solid(x,y,w,h);
+      solid(x,y-Hg,w,h+Hg); // NEW: коллайдер на весь силуэт (крыша + стена)
     };
     const XS=[[20,220],[380,820],[980,1420],[1580,2020],[2180,2380]],YS=[[20,220],[380,820],[980,1420]];
     YS.forEach(([y0,y1])=>XS.forEach(([x0,x1])=>{
@@ -154,6 +156,7 @@ class Game extends Phaser.Scene{
         const c=NEON[rnd.between(0,4)];
         this.add.image(px,py,'glow').setTint(c).setScale(3).setBlendMode('ADD').setAlpha(0.7).setDepth(-4);
         this.add.circle(px,py,5,0xffffff).setDepth(py);
+        solid(px-6,py-6,12,12); // NEW: столб фонаря твёрдый
       });
     }));
 
@@ -171,7 +174,7 @@ class Game extends Phaser.Scene{
     solid(0,1900,W,H-1900);
 
     const p=this.player=this.physics.add.sprite(600,1500,'hero').setCollideWorldBounds(true);
-    p.body.setSize(24,14).setOffset(12,48);
+    p.body.setSize(22,14).setOffset(13,48); // NEW: хитбокс уже, чтобы проходить в переулки
     this.physics.add.collider(p,walls);
 
     const cam=this.cameras.main;
@@ -217,7 +220,7 @@ class UI extends Phaser.Scene{
     this.base=this.add.circle(0,0,62,0x000000,0.35).setStrokeStyle(3,0x00f0ff,0.8);
     this.thumb=this.add.circle(0,0,28,0xff2bd6,0.85);
     this.hint=this.add.text(0,0,'Двигай джойстик',{fontFamily:'sans-serif',fontSize:'13px',color:'#00f0ff'}).setOrigin(.5);
-    this.hud=this.add.text(16,14,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
+    this.add.text(16,14,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
     this.add.text(16,44,'NEON STRIP',{fontFamily:'sans-serif',fontSize:'12px',color:'#ff2bd6'});
     this.mb=this.add.rectangle(0,0,84,38,0x000000,0.5).setStrokeStyle(2,0xff2bd6).setInteractive();
     this.mt=this.add.text(0,0,'MENU',{fontFamily:FONT,fontSize:'15px',color:'#ffffff'}).setOrigin(.5);
@@ -257,7 +260,7 @@ class UI extends Phaser.Scene{
 new Phaser.Game({
   type:Phaser.AUTO,parent:'game',backgroundColor:'#05010a',
   scale:{mode:Phaser.Scale.RESIZE,width:window.innerWidth,height:window.innerHeight},
-  physics:{default:'arcade',arcade:{debug:false}},
+  physics:{default:'arcade',arcade:{debug:false,fps:60}}, // NEW: фиксированный шаг физики
   scene:[Menu,Game,UI]
 });
 </script>
