@@ -10,6 +10,7 @@ html,body{margin:0;height:100%;background:#05010a;overflow:hidden;touch-action:n
 #game{width:100vw;height:100vh;height:100dvh}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script src="player.js?v=3"></script>
 </head>
 <body>
 <div id="game"></div>
@@ -23,15 +24,8 @@ function makeTextures(s){
   const g=s.make.graphics({add:false});
   g.fillStyle(0x000000,0.45).fillEllipse(24,58,30,10);
   g.fillStyle(0x1a1a2e).fillRect(16,40,7,16).fillRect(25,40,7,16);
-  g.fillStyle(0xffffff).fillRect(15,54,9,4).fillRect(24,54,9,4);
-  g.fillStyle(0x2b0f3a).fillRect(6,24,6,16).fillRect(36,24,6,16);
-  g.fillStyle(0xe0a882).fillCircle(9,41,3).fillCircle(39,41,3);
   g.fillStyle(0x2b0f3a).fillRoundedRect(11,22,26,22,6);
-  g.lineStyle(2,0xff2bd6).strokeRoundedRect(11,22,26,22,6);
-  g.fillStyle(0x00f0ff).fillTriangle(20,22,28,22,24,32);
   g.fillStyle(0xe0a882).fillCircle(24,14,10);
-  g.fillStyle(0x140b08).fillEllipse(24,8,22,12);
-  g.fillStyle(0x00f0ff).fillRect(17,13,14,3);
   g.generateTexture('hero',48,64);g.clear();
   g.fillStyle(0x88ccff).fillRect(0,0,2,14);
   g.generateTexture('drop',2,14);g.clear();
@@ -73,7 +67,7 @@ class Menu extends Phaser.Scene{
       this.cameras.main.fadeOut(400,0,0,0);
       this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
     });
-    this.add.text(cx,h-18,'v0.2 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
+    this.add.text(cx,h-18,'v0.3 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
   }
   update(){
     const {w,h,y0,g}=this,cx=w/2;
@@ -109,7 +103,6 @@ class Game extends Phaser.Scene{
     gr.lineStyle(3,0xff2bd6,0.8).lineBetween(0,TOP,W,TOP);
     gr.fillStyle(0x041a2e).fillRect(0,1900,W,H-1900);
     gr.lineStyle(3,0x00f0ff,0.9).lineBetween(0,1900,W,1900);
-    // NEW: видимая неоновая граница карты
     gr.lineStyle(12,0xff2bd6,0.15).strokeRect(4,4,W-8,H-8);
     gr.lineStyle(3,0xff2bd6,0.9).strokeRect(2,2,W-4,H-4);
     this.waves=this.add.graphics().setDepth(-9);
@@ -140,7 +133,7 @@ class Game extends Phaser.Scene{
           .setOrigin(.5).setShadow(0,0,hex(c),12,true,true).setDepth(y+h+0.5);
         if(rnd.frac()<0.4)this.tweens.add({targets:t,alpha:0.3,duration:80,yoyo:true,repeat:-1,repeatDelay:rnd.between(1200,4000)});
       }
-      solid(x,y-Hg,w,h+Hg); // NEW: коллайдер на весь силуэт (крыша + стена)
+      solid(x,y-Hg,w,h+Hg);
     };
     const XS=[[20,220],[380,820],[980,1420],[1580,2020],[2180,2380]],YS=[[20,220],[380,820],[980,1420]];
     YS.forEach(([y0,y1])=>XS.forEach(([x0,x1])=>{
@@ -156,7 +149,7 @@ class Game extends Phaser.Scene{
         const c=NEON[rnd.between(0,4)];
         this.add.image(px,py,'glow').setTint(c).setScale(3).setBlendMode('ADD').setAlpha(0.7).setDepth(-4);
         this.add.circle(px,py,5,0xffffff).setDepth(py);
-        solid(px-6,py-6,12,12); // NEW: столб фонаря твёрдый
+        solid(px-6,py-6,12,12);
       });
     }));
 
@@ -173,9 +166,9 @@ class Game extends Phaser.Scene{
     }
     solid(0,1900,W,H-1900);
 
-    const p=this.player=this.physics.add.sprite(600,1500,'hero').setCollideWorldBounds(true);
-    p.body.setSize(22,14).setOffset(13,48); // NEW: хитбокс уже, чтобы проходить в переулки
-    this.physics.add.collider(p,walls);
+    // Герой: PlayerController (физика) + CharacterAnimator (внешний вид) — см. player.js
+    this.pc=new PlayerController(this,600,1500,walls);
+    const p=this.player=this.pc.sprite;
 
     const cam=this.cameras.main;
     const zoom=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
@@ -184,24 +177,19 @@ class Game extends Phaser.Scene{
     this.scale.on('resize',rz);
     this.events.once('shutdown',()=>this.scale.off('resize',rz));
 
-    this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT'):null;
+    this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT'):null;
     this.scene.launch('UI');
   }
   update(t){
-    const p=this.player,ui=this.scene.get('UI'),k=this.keys;
+    const ui=this.scene.get('UI'),k=this.keys;
     let vx=ui&&ui.vec?ui.vec.x:0,vy=ui&&ui.vec?ui.vec.y:0;
     if(k){
       if(k.A.isDown||k.LEFT.isDown)vx=-1;if(k.D.isDown||k.RIGHT.isDown)vx=1;
       if(k.W.isDown||k.UP.isDown)vy=-1;if(k.S.isDown||k.DOWN.isDown)vy=1;
     }
-    const len=Math.hypot(vx,vy);
-    if(len>1){vx/=len;vy/=len;}
-    p.setVelocity(vx*230,vy*230);
-    if(len>0.1){
-      if(Math.abs(vx)>0.05)p.setFlipX(vx<0);
-      p.angle=Math.sin(t*0.02)*5;p.scaleY=1+Math.sin(t*0.04)*0.04;
-    }else{p.angle=0;p.scaleY=1;}
-    p.setDepth(p.y+26);
+    const run=(ui&&ui.run)||(k&&k.SHIFT.isDown);
+    this.pc.update({x:vx,y:vy,run},Math.min(this.game.loop.delta/1000,0.05));
+    if(ui&&ui.st)ui.st.setText(this.pc.state);
     const w=this.waves;w.clear();w.lineStyle(2,0x00f0ff,0.45);
     for(let r=0;r<6;r++){
       const y=1930+r*60;w.beginPath();w.moveTo(0,y);
@@ -214,7 +202,7 @@ class Game extends Phaser.Scene{
 class UI extends Phaser.Scene{
   constructor(){super('UI')}
   create(){
-    this.vec=new Phaser.Math.Vector2();this.pid=null;
+    this.vec=new Phaser.Math.Vector2();this.pid=null;this.run=false;
     this.input.addPointer(2);
     this.add.particles(0,0,'drop',{x:{min:-100,max:2200},y:-20,lifespan:1200,speedY:{min:600,max:800},speedX:{min:-150,max:-100},quantity:2,frequency:40,alpha:{start:0.35,end:0},blendMode:'ADD'}).setDepth(-1);
     this.base=this.add.circle(0,0,62,0x000000,0.35).setStrokeStyle(3,0x00f0ff,0.8);
@@ -222,9 +210,18 @@ class UI extends Phaser.Scene{
     this.hint=this.add.text(0,0,'Двигай джойстик',{fontFamily:'sans-serif',fontSize:'13px',color:'#00f0ff'}).setOrigin(.5);
     this.add.text(16,14,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
     this.add.text(16,44,'NEON STRIP',{fontFamily:'sans-serif',fontSize:'12px',color:'#ff2bd6'});
+    this.st=this.add.text(16,62,'IDLE',{fontFamily:'sans-serif',fontSize:'11px',color:'#7b5cff'});
     this.mb=this.add.rectangle(0,0,84,38,0x000000,0.5).setStrokeStyle(2,0xff2bd6).setInteractive();
     this.mt=this.add.text(0,0,'MENU',{fontFamily:FONT,fontSize:'15px',color:'#ffffff'}).setOrigin(.5);
     this.mb.on('pointerup',()=>{this.scene.stop('Game');this.scene.start('Menu');});
+    // Кнопка WALK / RUN
+    this.rb=this.add.circle(0,0,40,0x000000,0.5).setStrokeStyle(3,0x00f0ff).setInteractive();
+    this.rt=this.add.text(0,0,'WALK',{fontFamily:FONT,fontSize:'14px',color:'#ffffff'}).setOrigin(.5);
+    this.rb.on('pointerdown',()=>{
+      this.run=!this.run;
+      this.rt.setText(this.run?'RUN':'WALK');
+      this.rb.setStrokeStyle(3,this.run?0xff2bd6:0x00f0ff).setFillStyle(this.run?0xff2bd6:0x000000,this.run?0.35:0.5);
+    });
 
     this.input.on('pointerdown',(p,over)=>{
       if(over.length||this.pid!==null)return;
@@ -249,6 +246,7 @@ class UI extends Phaser.Scene{
   layout(){
     const w=this.scale.width,h=this.scale.height;
     this.mb.setPosition(w-56,34);this.mt.setPosition(w-56,34);
+    this.rb.setPosition(w-80,h-110);this.rt.setPosition(w-80,h-110);
     if(this.pid===null){
       this.base.setPosition(100,h-120).setAlpha(0.5);
       this.thumb.setPosition(100,h-120).setAlpha(0.6);
@@ -260,7 +258,7 @@ class UI extends Phaser.Scene{
 new Phaser.Game({
   type:Phaser.AUTO,parent:'game',backgroundColor:'#05010a',
   scale:{mode:Phaser.Scale.RESIZE,width:window.innerWidth,height:window.innerHeight},
-  physics:{default:'arcade',arcade:{debug:false,fps:60}}, // NEW: фиксированный шаг физики
+  physics:{default:'arcade',arcade:{debug:false,fps:60}},
   scene:[Menu,Game,UI]
 });
 </script>
