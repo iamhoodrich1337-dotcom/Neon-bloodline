@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>NEON: BLOODLINE</title>
+<style>
+html,body{margin:0;height:100%;background:#05010a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#game{width:100vw;height:100vh;height:100dvh}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+<div id="game"></div>
+<script>
+const NEON=[0xff2bd6,0x00f0ff,0xffb000,0x7b5cff,0x39ff88];
+const hex=c=>'#'+c.toString(16).padStart(6,'0');
+const FONT='"Arial Black",Impact,sans-serif';
+
+function makeTextures(s){
+  if(s.textures.exists('hero'))return;
+  const g=s.make.graphics({add:false});
+  // ГЕРОЙ (временный, позже заменим на основе фото)
+  g.fillStyle(0x000000,0.45).fillEllipse(24,58,30,10);
+  g.fillStyle(0x1a1a2e).fillRect(16,40,7,16).fillRect(25,40,7,16);
+  g.fillStyle(0xffffff).fillRect(15,54,9,4).fillRect(24,54,9,4);
+  g.fillStyle(0x2b0f3a).fillRect(6,24,6,16).fillRect(36,24,6,16);
+  g.fillStyle(0xe0a882).fillCircle(9,41,3).fillCircle(39,41,3);
+  g.fillStyle(0x2b0f3a).fillRoundedRect(11,22,26,22,6);
+  g.lineStyle(2,0xff2bd6).strokeRoundedRect(11,22,26,22,6);
+  g.fillStyle(0x00f0ff).fillTriangle(20,22,28,22,24,32);
+  g.fillStyle(0xe0a882).fillCircle(24,14,10);
+  g.fillStyle(0x140b08).fillEllipse(24,8,22,12);
+  g.fillStyle(0x00f0ff).fillRect(17,13,14,3);
+  g.generateTexture('hero',48,64);g.clear();
+  g.fillStyle(0x88ccff).fillRect(0,0,2,14);
+  g.generateTexture('drop',2,14);g.clear();
+  for(let i=0;i<10;i++)g.fillStyle(0xffffff,0.07).fillCircle(32,32,32-i*3);
+  g.generateTexture('glow',64,64);
+  g.destroy();
+}
+
+class Menu extends Phaser.Scene{
+  constructor(){super('Menu')}
+  create(){
+    makeTextures(this);this.t=0;this.build();
+    const f=()=>this.scene.restart();
+    this.scale.on('resize',f);
+    this.events.once('shutdown',()=>this.scale.off('resize',f));
+  }
+  build(){
+    const w=this.scale.width,h=this.scale.height,cx=w/2,s=Math.min(w/400,1.6);
+    this.w=w;this.h=h;this.y0=h*0.55;
+    const bg=this.add.graphics();
+    bg.fillGradientStyle(0x2a0040,0x2a0040,0x05010a,0x05010a,1).fillRect(0,0,w,this.y0);
+    const r=90*s,sy=this.y0-r*0.55;
+    bg.fillStyle(0xff2bd6,1).fillCircle(cx,sy,r);
+    bg.fillStyle(0xffb000,0.5).fillCircle(cx,sy-r*0.3,r*0.6);
+    for(let i=0;i<6;i++)bg.fillStyle(0x12002a).fillRect(cx-r,sy+r*0.05+i*r*0.17,r*2,2+i*2);
+    this.g=this.add.graphics();
+    const t1=this.add.text(cx,h*0.16,'NEON:',{fontFamily:FONT,fontSize:Math.round(50*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',18,true,true);
+    const t2=this.add.text(cx,h*0.16+58*s,'BLOODLINE',{fontFamily:FONT,fontSize:Math.round(46*s)+'px',color:'#ffd6f6'}).setOrigin(.5).setShadow(0,0,'#ff0055',22,true,true);
+    this.add.text(cx,h*0.16+104*s,'V I C E   B A Y',{fontFamily:FONT,fontSize:Math.round(16*s)+'px',color:'#00f0ff'}).setOrigin(.5);
+    this.tweens.add({targets:t2,alpha:{from:1,to:0.55},duration:90,yoyo:true,repeat:-1,repeatDelay:2200});
+    const by=h*0.78,bw=230*s,bh=62*s;
+    const btn=this.add.rectangle(cx,by,bw,bh,0x000000,0.55).setStrokeStyle(3,0x00f0ff).setInteractive({useHandCursor:true});
+    const bt=this.add.text(cx,by,'NEW GAME',{fontFamily:FONT,fontSize:Math.round(26*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',12,true,true);
+    this.tweens.add({targets:[btn,bt],scale:1.05,duration:800,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    btn.on('pointerdown',()=>btn.setFillStyle(0x00f0ff,0.3));
+    btn.on('pointerout',()=>btn.setFillStyle(0x000000,0.55));
+    btn.on('pointerup',()=>{
+      btn.disableInteractive();
+      this.cameras.main.fadeOut(400,0,0,0);
+      this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
+    });
+    this.add.text(cx,h-18,'v0.1 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
+  }
+  update(){
+    const {w,h,y0,g}=this,cx=w/2;
+    this.t=(this.t+0.008)%1;
+    g.clear();
+    g.fillStyle(0x0a0218).fillRect(0,y0,w,h-y0);
+    g.lineStyle(2,0xff2bd6,0.9).lineBetween(0,y0,w,y0);
+    g.lineStyle(1.5,0x7b5cff,0.7);
+    for(let i=-12;i<=12;i++)g.lineBetween(cx+i*8,y0,cx+i*w*0.18,h);
+    for(let k=0;k<12;k++){const p=(k+this.t)/12,y=y0+(h-y0)*p*p;g.lineBetween(0,y,w,y);}
+  }
+}
+
+class Game extends Phaser.Scene{
+  constructor(){super('Game')}
+  create(){
+    const W=2400,H=2300;
+    this.physics.world.setBounds(0,0,W,H);
+    const rnd=new Phaser.Math.RandomDataGenerator(['vicebay']);
+    const gr=this.add.graphics().setDepth(-10);
+    gr.fillStyle(0x0d0818).fillRect(0,0,W,H);
+    const RX=[300,900,1500,2100],RY=[300,900,1500],R=80,TOP=1620;
+    gr.fillStyle(0x15101f);
+    RX.forEach(x=>gr.fillRect(x-R,0,R*2,TOP));
+    RY.forEach(y=>gr.fillRect(0,y-R,W,R*2));
+    gr.lineStyle(2,0x7b5cff,0.5);
+    RX.forEach(x=>{gr.lineBetween(x-R,0,x-R,TOP);gr.lineBetween(x+R,0,x+R,TOP)});
+    RY.forEach(y=>{gr.lineBetween(0,y-R,W,y-R);gr.lineBetween(0,y+R,W,y+R)});
+    gr.fillStyle(0xffb000,0.7);
+    RX.forEach(x=>{for(let y=0;y<TOP;y+=60)gr.fillRect(x-2,y,4,30)});
+    RY.forEach(y=>{for(let x=0;x<W;x+=60)gr.fillRect(x,y-2,30,4)});
+    gr.fillStyle(0x3a2340).fillRect(0,TOP,W,280);
+    gr.lineStyle(3,0xff2bd6,0.8).lineBetween(0,TOP,W,TOP);
+    gr.fillStyle(0x041a2e).fillRect(0,1900,W,H-1900);
+    gr.lineStyle(3,0x00f0ff,0.9).lineBetween(0,1900,W,1900);
+    this.waves=this.add.graphics().setDepth(-9);
+
+    const walls=this.physics.add.staticGroup();
+    const solid=(x,y,w,h)=>{const r=this.add.rectangle(x+w/2,y+h/2,w,h).setVisible(false);walls.add(r);};
+
+    const names=['NEON MOTEL','CLUB 86','PALM','VICE','BAR','SUSHI','ARCADE','HOTEL','DISCO','PAWN','RADIO','GYM'];
+    let ni=0;
+    const building=(x,y,w,h,Hg)=>{
+      const c=NEON[rnd.between(0,4)],g=this.add.graphics().setDepth(y+h);
+      gr.fillStyle(0x000000,0.35).fillRect(x+w,y-Hg+16,16,h+Hg-16);
+      g.fillStyle(0x120822).fillRect(x,y+h-Hg,w,Hg);
+      for(let wy=y+h-Hg+12;wy<y+h-30;wy+=22)
+        for(let wx=x+10;wx<x+w-18;wx+=22){
+          const lit=rnd.frac()<0.45;
+          g.fillStyle(lit?c:0x24163a,lit?0.85:1).fillRect(wx,wy,12,10);
+        }
+      g.fillStyle(c,0.9).fillRect(x+w/2-12,y+h-22,24,22);
+      g.fillStyle(0x1c0f30).fillRect(x,y-Hg,w,h);
+      g.fillStyle(0x281745);
+      for(let k=0;k<3;k++)g.fillRect(x+rnd.between(10,w-50),y-Hg+rnd.between(10,h-45),36,28);
+      g.lineStyle(10,c,0.15).strokeRect(x,y-Hg,w,h);
+      g.lineStyle(2,c,1).strokeRect(x,y-Hg,w,h);
+      g.lineStyle(3,c,1).lineBetween(x,y+h-Hg,x+w,y+h-Hg);
+      if(Hg>80&&rnd.frac()<0.7){
+        const t=this.add.text(x+w/2,y+h-Hg/2-8,names[ni++%names.length],{fontFamily:FONT,fontSize:'20px',color:'#ffffff'})
+          .setOrigin(.5).setShadow(0,0,hex(c),12,true,true).setDepth(y+h+0.5);
+        if(rnd.frac()<0.4)this.tweens.add({targets:t,alpha:0.3,duration:80,yoyo:true,repeat:-1,repeatDelay:rnd.between(1200,4000)});
+      }
+      solid(x,y,w,h);
+    };
+    const XS=[[20,220],[380,820],[980,1420],[1580,2020],[2180,2380]],YS=[[20,220],[380,820],[980,1420]];
+    YS.forEach(([y0,y1])=>XS.forEach(([x0,x1])=>{
+      const n=(x1-x0)>300?2:1,bw=(x1-x0-(n-1)*30)/n;
+      for(let i=0;i<n;i++){
+        const Hg=rnd.between(50,Math.min(170,(y1-y0)*0.4)),y=y0+Hg;
+        building(x0+i*(bw+30),y,bw,y1-y,Hg);
+      }
+    }));
+
+    RX.forEach(x=>RY.forEach(y=>{
+      [[x-R-14,y-R-14],[x+R+14,y+R+14]].forEach(([px,py])=>{
+        const c=NEON[rnd.between(0,4)];
+        this.add.image(px,py,'glow').setTint(c).setScale(3).setBlendMode('ADD').setAlpha(0.7).setDepth(-4);
+        this.add.circle(px,py,5,0xffffff).setDepth(py);
+      });
+    }));
+
+    for(let px=100;px<W;px+=260){
+      const py=1700+rnd.between(0,120),g=this.add.graphics().setDepth(py),tx=px+10,ty=py-75;
+      g.fillStyle(0x000000,0.35).fillEllipse(px+35,py,60,14);
+      g.lineStyle(7,0x5a3420).lineBetween(px,py,tx,ty);
+      g.fillStyle(0x39ff88,0.9);
+      for(let a=0;a<6;a++){
+        const an=a*Math.PI/3+0.3,ex=tx+Math.cos(an)*42,ey=ty+Math.sin(an)*26;
+        g.fillTriangle(tx,ty,ex,ey,tx+Math.cos(an+0.35)*24,ty+Math.sin(an+0.35)*16);
+      }
+      solid(px-6,py-8,12,10);
+    }
+    solid(0,1900,W,H-1900);
+
+    const p=this.player=this.physics.add.sprite(600,1500,'hero').setCollideWorldBounds(true);
+    p.body.setSize(24,14).setOffset(12,48);
+    this.physics.add.collider(p,walls);
+
+    const cam=this.cameras.main;
+    const zoom=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
+    cam.setBounds(0,0,W,H).startFollow(p,true,0.12,0.12).setZoom(zoom()).fadeIn(500);
+    const rz=()=>cam.setZoom(zoom());
+    this.scale.on('resize',rz);
+    this.events.once('shutdown',()=>this.scale.off('resize',rz));
+
+    this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT'):null;
+    this.scene.launch('UI');
+  }
+  update(t){
+    const p=this.player,ui=this.scene.get('UI'),k=this.keys;
+    let vx=ui&&ui.vec?ui.vec.x:0,vy=ui&&ui.vec?ui.vec.y:0;
+    if(k){
+      if(k.A.isDown||k.LEFT.isDown)vx=-1;if(k.D.isDown||k.RIGHT.isDown)vx=1;
+      if(k.W.isDown||k.UP.isDown)vy=-1;if(k.S.isDown||k.DOWN.isDown)vy=1;
+    }
+    const len=Math.hypot(vx,vy);
+    if(len>1){vx/=len;vy/=len;}
+    p.setVelocity(vx*230,vy*230);
+    if(len>0.1){
+      if(Math.abs(vx)>0.05)p.setFlipX(vx<0);
+      p.angle=Math.sin(t*0.02)*5;p.scaleY=1+Math.sin(t*0.04)*0.04;
+    }else{p.angle=0;p.scaleY=1;}
+    p.setDepth(p.y+26);
+    const w=this.waves;w.clear();w.lineStyle(2,0x00f0ff,0.45);
+    for(let r=0;r<6;r++){
+      const y=1930+r*60;w.beginPath();w.moveTo(0,y);
+      for(let x=0;x<=2400;x+=40)w.lineTo(x,y+Math.sin(x*0.01+t*0.002+r)*6);
+      w.strokePath();
+    }
+  }
+}
+
+class UI extends Phaser.Scene{
+  constructor(){super('UI')}
+  create(){
+    this.vec=new Phaser.Math.Vector2();this.pid=null;
+    this.input.addPointer(2);
+    this.add.particles(0,0,'drop',{x:{min:-100,max:2200},y:-20,lifespan:1200,speedY:{min:600,max:800},speedX:{min:-150,max:-100},quantity:2,frequency:40,alpha:{start:0.35,end:0},blendMode:'ADD'}).setDepth(-1);
+    this.base=this.add.circle(0,0,62,0x000000,0.35).setStrokeStyle(3,0x00f0ff,0.8);
+    this.thumb=this.add.circle(0,0,28,0xff2bd6,0.85);
+    this.hint=this.add.text(0,0,'Двигай джойстик',{fontFamily:'sans-serif',fontSize:'13px',color:'#00f0ff'}).setOrigin(.5);
+    this.hud=this.add.text(16,14,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
+    this.add.text(16,44,'NEON STRIP',{fontFamily:'sans-serif',fontSize:'12px',color:'#ff2bd6'});
+    this.mb=this.add.rectangle(0,0,84,38,0x000000,0.5).setStrokeStyle(2,0xff2bd6).setInteractive();
+    this.mt=this.add.text(0,0,'MENU',{fontFamily:FONT,fontSize:'15px',color:'#ffffff'}).setOrigin(.5);
+    this.mb.on('pointerup',()=>{this.scene.stop('Game');this.scene.start('Menu');});
+
+    this.input.on('pointerdown',(p,over)=>{
+      if(over.length||this.pid!==null)return;
+      if(p.x>this.scale.width*0.6)return;
+      this.pid=p.id;this.ox=p.x;this.oy=p.y;
+      this.base.setPosition(p.x,p.y);this.thumb.setPosition(p.x,p.y);
+      this.base.setAlpha(1);this.thumb.setAlpha(1);
+      if(this.hint.visible)this.tweens.add({targets:this.hint,alpha:0,duration:400,onComplete:()=>this.hint.setVisible(false)});
+    });
+    this.input.on('pointermove',p=>{
+      if(p.id!==this.pid)return;
+      const dx=p.x-this.ox,dy=p.y-this.oy,d=Math.hypot(dx,dy),m=Math.min(d,62),a=Math.atan2(dy,dx);
+      this.thumb.setPosition(this.ox+Math.cos(a)*m,this.oy+Math.sin(a)*m);
+      if(m<8)this.vec.set(0,0);else this.vec.set(Math.cos(a)*m/62,Math.sin(a)*m/62);
+    });
+    const up=p=>{if(p.id!==this.pid)return;this.pid=null;this.vec.set(0,0);this.layout();};
+    this.input.on('pointerup',up);this.input.on('pointerupoutside',up);
+    this.layout();
+    this.scale.on('resize',this.layout,this);
+    this.events.once('shutdown',()=>this.scale.off('resize',this.layout,this));
+  }
+  layout(){
+    const w=this.scale.width,h=this.scale.height;
+    this.mb.setPosition(w-56,34);this.mt.setPosition(w-56,34);
+    if(this.pid===null){
+      this.base.setPosition(100,h-120).setAlpha(0.5);
+      this.thumb.setPosition(100,h-120).setAlpha(0.6);
+    }
+    this.hint.setPosition(100,h-200);
+  }
+}
+
+new Phaser.Game({
+  type:Phaser.AUTO,parent:'game',backgroundColor:'#05010a',
+  scale:{mode:Phaser.Scale.RESIZE,width:window.innerWidth,height:window.innerHeight},
+  physics:{default:'arcade',arcade:{debug:false}},
+  scene:[Menu,Game,UI]
+});
+</script>
+</body>
+</html>
