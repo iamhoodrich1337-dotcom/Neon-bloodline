@@ -1,4 +1,4 @@
-// NEON: BLOODLINE — Vehicle System v0.4
+// NEON: BLOODLINE — Vehicle System v0.5 (прямоугольное тело, подсказка выхода, safe-area)
 // VehiclePhysics   — физика: разгон, торможение, задний ход, инерция, повороты, удары
 // VehicleController — одна машина: спрайт, физика, фары, неоновая подсветка
 // VehicleManager    — все машины, посадка/выход, камера
@@ -32,7 +32,7 @@ function makeCarTexture(s,t){
 class VehiclePhysics{
   constructor(sprite,spec,heading){
     this.sprite=sprite;this.spec=spec;this.heading=heading||0;
-    this.speed=0;this.vx=0;this.vy=0;this.angVel=0;this.wasHit=false;this.onImpact=null;
+    this.speed=0;this.vx=0;this.vy=0;this.angVel=0;this.wasHit=false;this.onImpact=null;this.tryRotate=null;
   }
   update(inp,dt){
     const s=this.spec,b=this.sprite.body,bl=b.blocked;
@@ -59,7 +59,12 @@ class VehiclePhysics{
     const steer=(inp.right?1:0)-(inp.left?1:0);
     const f=Phaser.Math.Clamp(sp/120,-1,1);
     this.angVel+=(steer*s.turn*f-this.angVel)*Math.min(1,10*dt);
-    this.heading+=this.angVel*dt;
+    if(Math.abs(this.angVel)<0.001)this.angVel=0;
+    if(this.angVel!==0){
+      const nh=this.heading+this.angVel*dt;
+      // поворот запрещён, если повернутый корпус войдёт в препятствие
+      if(!this.tryRotate||this.tryRotate(nh))this.heading=nh;else this.angVel=0;
+    }
 
     const g=1-Math.exp(-s.grip*dt);
     this.vx+=(Math.cos(this.heading)*sp-this.vx)*g;
@@ -71,12 +76,14 @@ class VehiclePhysics{
 }
 
 class VehicleController{
-  constructor(scene,spec,x,y,heading){
-    this.scene=scene;this.spec=spec;this.driven=false;this.braking=false;
+  constructor(scene,spec,x,y,heading,mgr){
+    this.scene=scene;this.spec=spec;this.mgr=mgr;this.driven=false;this.braking=false;
+    this.L=spec.len||72;this.W=spec.wid||34;
     this.sprite=scene.physics.add.sprite(x,y,makeCarTexture(scene,spec)).setCollideWorldBounds(true);
-    this.sprite.body.setCircle(20,20,0);
     this.sprite.body.setImmovable(true);
-    this.phys=new VehiclePhysics(this.sprite,spec,heading);
+    this.phys=new VehiclePhysics(this.sprite,spec,heading||0);
+    this.applyBox(this.phys.heading);
+    this.phys.tryRotate=h=>{if(!this.fits(h))return false;this.applyBox(h);return true;};
     this.phys.onImpact=()=>scene.cameras.main.shake(120,0.004);
     const G=(tint,sx,sy,a)=>scene.add.image(x,y,'glow').setTint(tint).setBlendMode('ADD').setScale(sx,sy).setAlpha(a);
     this.under=G(spec.accent,2.2,1.4,0.35);
@@ -86,6 +93,14 @@ class VehicleController{
     scene.events.on('postupdate',sync);
     scene.events.once('shutdown',()=>scene.events.off('postupdate',sync));
     this.sync();
+  }
+  // Прямоугольное тело: Arcade не вращает тела, поэтому размер прямоугольника
+  // пересчитывается под текущий угол машины (описанный прямоугольник корпуса).
+  box(h){const c=Math.abs(Math.cos(h)),s=Math.abs(Math.sin(h));return{w:c*this.L+s*this.W,h:s*this.L+c*this.W};}
+  applyBox(h){const b=this.box(h);this.sprite.body.setSize(b.w,b.h,true);}
+  fits(h){
+    const b=this.box(h),x=this.sprite.body.center.x,y=this.sprite.body.center.y;
+    return !this.mgr||this.mgr.areaFree(x-b.w/2+2,y-b.h/2+2,b.w-4,b.h-4,this);
   }
   setDriven(d){this.driven=d;this.sprite.body.setImmovable(!d);this.head.setAlpha(d?0.55:0);}
   stop(){const p=this.phys;p.speed=0;p.vx=0;p.vy=0;p.angVel=0;this.sprite.setVelocity(0,0);}
@@ -105,7 +120,7 @@ class VehicleManager{
     this.cars=[];this.driving=null;this.near=null;this.lx=0;this.ly=0;
   }
   spawn(type,x,y,heading){
-    const c=new VehicleController(this.s,VEHICLE_TYPES[type],x,y,heading);
+    const c=new VehicleController(this.s,VEHICLE_TYPES[type],x,y,heading,this);
     this.s.physics.add.collider(c.sprite,this.walls);
     this.s.physics.add.collider(this.pc.sprite,c.sprite);
     this.cars.forEach(o=>this.s.physics.add.collider(o.sprite,c.sprite));
@@ -124,7 +139,7 @@ class VehicleManager{
       const z=this.s.zoomFn()*(1-Math.min(Math.abs(c.phys.speed)/c.spec.max,1)*0.18);
       cam.setZoom(cam.zoom+(z-cam.zoom)*t);
       if(vui)vui.take('enter');
-      if((vui&&vui.take('exit'))||ek)this.exit();
+      if(((vui&&vui.take('exit'))||ek)&&!this.exit()&&vui)vui.toast('Нет места для выхода — отъедь от препятствия');
     }else{
       const p=this.pc.sprite;let best=null,bd=80;
       this.cars.forEach(c=>{
@@ -164,15 +179,19 @@ class VehicleManager{
     }
     return false;
   }
-  free(x,y){
-    const R=Phaser.Geom.Rectangle,r=new R(x-11,y+16,22,14),wb=this.s.physics.world.bounds;
+  // x,y — центр спрайта героя; проверяется его физическое тело (22x14 у ног)
+  free(x,y){return this.areaFree(x-11,y+16,22,14,null);}
+  areaFree(x,y,w,h,self){
+    const R=Phaser.Geom.Rectangle,I=Phaser.Geom.Intersects.RectangleToRectangle,r=new R(x,y,w,h),wb=this.s.physics.world.bounds;
     if(r.x<wb.x||r.y<wb.y||r.right>wb.right||r.bottom>wb.bottom)return false;
-    for(const w of this.walls.getChildren()){
-      const b=w.body;
-      if(Phaser.Geom.Intersects.RectangleToRectangle(r,new R(b.x,b.y,b.width,b.height)))return false;
+    for(const o of this.walls.getChildren()){
+      const b=o.body;
+      if(I(r,new R(b.x,b.y,b.width,b.height)))return false;
     }
     for(const c of this.cars){
-      if(Phaser.Math.Distance.Between(r.centerX,r.centerY,c.sprite.x,c.sprite.y)<34)return false;
+      if(c===self)continue;
+      const b=c.sprite.body;
+      if(I(r,new R(b.x,b.y,b.width,b.height)))return false;
     }
     return true;
   }
@@ -209,17 +228,26 @@ class VehicleUI{
     this.rightB=mk('RIGHT',80,80,0x00f0ff,true,'right');
     this.brakeB=mk('BRAKE',80,80,0xff2b4a,true,'brake');
     this.gasB=mk('GAS',90,110,0x39ff88,true,'gas');
+    this.toastT=ui.add.text(0,0,'',{fontFamily:'-apple-system,sans-serif',fontSize:'15px',color:'#ffffff',backgroundColor:'rgba(0,0,0,0.75)',padding:{x:12,y:8},align:'center'}).setOrigin(.5).setDepth(20).setVisible(false);
     this.speedT=ui.add.text(0,0,'',{fontFamily:F,fontSize:'24px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',10,true,true);
     this.setMode('foot');
   }
   layout(w,h){
-    this.enterB.set(w-110,h-200);
-    this.exitB.set(w-56,84);
-    this.leftB.set(52,h-70);
-    this.rightB.set(140,h-70);
-    this.brakeB.set(w-150,h-70);
-    this.gasB.set(w-55,h-80);
-    this.speedT.setPosition(w/2,h-150);
+    const S=(typeof SAFE!=='undefined')?SAFE:{t:0,r:0,b:0,l:0},L=S.l,R=S.r,T=S.t,B=S.b;
+    this.enterB.set(w-110-R,h-200-B);
+    this.exitB.set(w-56-R,84+T);
+    this.leftB.set(52+L,h-70-B);
+    this.rightB.set(140+L,h-70-B);
+    this.brakeB.set(w-150-R,h-70-B);
+    this.gasB.set(w-55-R,h-80-B);
+    this.speedT.setPosition(w/2,h-150-B);
+    this.toastT.setPosition(w/2,T+120);
+  }
+  toast(m){
+    const t=this.toastT;
+    this.ui.tweens.killTweensOf(t);
+    t.setText(m).setVisible(true).setAlpha(1);
+    this.ui.tweens.add({targets:t,alpha:0,delay:1800,duration:400,onComplete:()=>t.setVisible(false)});
   }
   setMode(m,car){
     if(m!==this.mode){

@@ -2,23 +2,57 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>NEON: BLOODLINE</title>
 <style>
 html,body{margin:0;height:100%;background:#05010a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#game{width:100vw;height:100vh;height:100dvh}
+#game{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100dvh}
+#game canvas{display:block}
+#safe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#fatal{display:none;position:fixed;inset:0;z-index:9;background:#05010a;color:#fff;font:16px -apple-system,sans-serif;text-align:center;padding:60px 24px;box-sizing:border-box}
+#fatal h1{color:#ff2bd6;font-size:24px;text-shadow:0 0 12px #ff2bd6}
+#fatal p{color:#cfd;line-height:1.4;word-break:break-word}
+#fatal button{margin-top:20px;padding:14px 30px;font-size:17px;background:#000;color:#fff;border:2px solid #00f0ff;border-radius:12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
-<script src="player.js?v=4"></script>
-<script src="vehicle.js?v=4"></script>
+<script src="save.js?v=5"></script>
+<script src="player.js?v=5"></script>
+<script src="vehicle.js?v=5"></script>
 </head>
 <body>
 <div id="game"></div>
+<div id="safe"></div>
+<div id="fatal"><h1>NEON: BLOODLINE</h1><p id="fmsg"></p><button onclick="location.reload()">Обновить</button></div>
 <script>
+// ---------- Ошибки и проверка движка ----------
+function showFatal(m){document.getElementById('fmsg').textContent=m;document.getElementById('fatal').style.display='block';}
+window.addEventListener('error',e=>showFatal('Ошибка: '+(e.message||'неизвестная')+(e.lineno?' (строка '+e.lineno+')':'')));
+if(!window.Phaser){
+  showFatal('Не удалось загрузить игровой движок Phaser. Проверь интернет или отключи блокировщик контента и нажми «Обновить».');
+  throw new Error('Phaser not loaded');
+}
+
+// ---------- iPhone: Retina, safe-area ----------
+const DPR=Math.min(window.devicePixelRatio||1,2);
+const SAFE={t:0,r:0,b:0,l:0};
+function readSafe(){
+  const cs=getComputedStyle(document.getElementById('safe'));
+  SAFE.t=parseFloat(cs.paddingTop)||0;SAFE.r=parseFloat(cs.paddingRight)||0;
+  SAFE.b=parseFloat(cs.paddingBottom)||0;SAFE.l=parseFloat(cs.paddingLeft)||0;
+}
+readSafe();
+const VW=s=>s.scale.width/DPR,VH=s=>s.scale.height/DPR;
+const uiCam=s=>s.cameras.main.setOrigin(0,0).setZoom(DPR);
+// Чёткий текст: все тексты рендерятся с плотностью экрана
+const _txt=Phaser.GameObjects.GameObjectFactory.prototype.text;
+Phaser.GameObjects.GameObjectFactory.prototype.text=function(x,y,t,st){return _txt.call(this,x,y,t,Object.assign({resolution:DPR},st||{}));};
+
 const NEON=[0xff2bd6,0x00f0ff,0xffb000,0x7b5cff,0x39ff88];
 const hex=c=>'#'+c.toString(16).padStart(6,'0');
 const FONT='"Arial Black",Impact,sans-serif';
+const num=(v,d)=>Number.isFinite(v)?v:d;
 
 function makeTextures(s){
   if(s.textures.exists('hero'))return;
@@ -38,13 +72,13 @@ function makeTextures(s){
 class Menu extends Phaser.Scene{
   constructor(){super('Menu')}
   create(){
-    makeTextures(this);this.t=0;this.build();
+    uiCam(this);makeTextures(this);this.t=0;this.build();
     const f=()=>this.scene.restart();
     this.scale.on('resize',f);
     this.events.once('shutdown',()=>this.scale.off('resize',f));
   }
   build(){
-    const w=this.scale.width,h=this.scale.height,cx=w/2,s=Math.min(w/400,1.6);
+    const w=VW(this),h=VH(this),cx=w/2,s=Math.min(w/400,h/500,1.6);
     this.w=w;this.h=h;this.y0=h*0.55;
     const bg=this.add.graphics();
     bg.fillGradientStyle(0x2a0040,0x2a0040,0x05010a,0x05010a,1).fillRect(0,0,w,this.y0);
@@ -53,22 +87,34 @@ class Menu extends Phaser.Scene{
     bg.fillStyle(0xffb000,0.5).fillCircle(cx,sy-r*0.3,r*0.6);
     for(let i=0;i<6;i++)bg.fillStyle(0x12002a).fillRect(cx-r,sy+r*0.05+i*r*0.17,r*2,2+i*2);
     this.g=this.add.graphics();
-    this.add.text(cx,h*0.16,'NEON:',{fontFamily:FONT,fontSize:Math.round(50*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',18,true,true);
-    const t2=this.add.text(cx,h*0.16+58*s,'BLOODLINE',{fontFamily:FONT,fontSize:Math.round(46*s)+'px',color:'#ffd6f6'}).setOrigin(.5).setShadow(0,0,'#ff0055',22,true,true);
-    this.add.text(cx,h*0.16+104*s,'V I C E   B A Y',{fontFamily:FONT,fontSize:Math.round(16*s)+'px',color:'#00f0ff'}).setOrigin(.5);
+    const ty=SAFE.t+h*0.12;
+    this.add.text(cx,ty,'NEON:',{fontFamily:FONT,fontSize:Math.round(50*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',18,true,true);
+    const t2=this.add.text(cx,ty+58*s,'BLOODLINE',{fontFamily:FONT,fontSize:Math.round(46*s)+'px',color:'#ffd6f6'}).setOrigin(.5).setShadow(0,0,'#ff0055',22,true,true);
+    this.add.text(cx,ty+104*s,'V I C E   B A Y',{fontFamily:FONT,fontSize:Math.round(16*s)+'px',color:'#00f0ff'}).setOrigin(.5);
     this.tweens.add({targets:t2,alpha:{from:1,to:0.55},duration:90,yoyo:true,repeat:-1,repeatDelay:2200});
-    const by=h*0.78,bw=230*s,bh=62*s;
+
+    const has=SaveManager.has();
+    let busy=false;
+    const start=()=>{
+      if(busy)return;busy=true;
+      this.cameras.main.fadeOut(400,0,0,0);
+      this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
+    };
+    const by=h*0.74-SAFE.b,bw=230*s,bh=62*s;
     const btn=this.add.rectangle(cx,by,bw,bh,0x000000,0.55).setStrokeStyle(3,0x00f0ff).setInteractive({useHandCursor:true});
-    const bt=this.add.text(cx,by,'NEW GAME',{fontFamily:FONT,fontSize:Math.round(26*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',12,true,true);
+    const bt=this.add.text(cx,by,has?'CONTINUE':'NEW GAME',{fontFamily:FONT,fontSize:Math.round(26*s)+'px',color:'#ffffff'}).setOrigin(.5).setShadow(0,0,'#00f0ff',12,true,true);
     this.tweens.add({targets:[btn,bt],scale:1.05,duration:800,yoyo:true,repeat:-1,ease:'Sine.inOut'});
     btn.on('pointerdown',()=>btn.setFillStyle(0x00f0ff,0.3));
     btn.on('pointerout',()=>btn.setFillStyle(0x000000,0.55));
-    btn.on('pointerup',()=>{
-      btn.disableInteractive();
-      this.cameras.main.fadeOut(400,0,0,0);
-      this.cameras.main.once('camerafadeoutcomplete',()=>this.scene.start('Game'));
-    });
-    this.add.text(cx,h-18,'v0.4 prototype',{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
+    btn.on('pointerup',start);
+    if(has){
+      const ny=by+bh/2+38*s;
+      const nb=this.add.rectangle(cx,ny,170*s,42*s,0x000000,0.5).setStrokeStyle(2,0xff2bd6).setInteractive({useHandCursor:true});
+      this.add.text(cx,ny,'NEW GAME',{fontFamily:FONT,fontSize:Math.round(16*s)+'px',color:'#ffd6f6'}).setOrigin(.5);
+      nb.on('pointerup',()=>{SaveManager.clear();start();});
+    }
+    const foot=SaveManager.available()?'v0.5 prototype · автосохранение':'v0.5 · сохранения недоступны (приватный режим)';
+    this.add.text(cx,h-18-SAFE.b,foot,{fontFamily:'sans-serif',fontSize:'12px',color:'#7b5cff'}).setOrigin(.5);
   }
   update(){
     const {w,h,y0,g}=this,cx=w/2;
@@ -167,23 +213,52 @@ class Game extends Phaser.Scene{
     }
     solid(0,1900,W,H-1900);
 
-    // Герой: PlayerController (физика) + CharacterAnimator (внешний вид) — см. player.js
+    // ---------- Герой и машины ----------
+    const sv=SaveManager.load();
+    this.zoomFn=()=>Phaser.Math.Clamp(Math.min(VW(this),VH(this))/420,0.85,1.4)*DPR;
     this.pc=new PlayerController(this,600,1500,walls);
     const p=this.player=this.pc.sprite;
-    // Машины: VehicleManager — см. vehicle.js
-    this.zoomFn=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
     this.vm=new VehicleManager(this,walls,this.pc);
-    this.vm.spawn('nova',780,1500,0);
+    if(sv&&Array.isArray(sv.cars))sv.cars.forEach(c=>{
+      if(c&&VEHICLE_TYPES[c.type])this.vm.spawn(c.type,num(c.x,780),num(c.y,1500),num(c.h,0));
+    });
+    if(!this.vm.cars.length)this.vm.spawn('nova',780,1500,0);
+    if(sv&&sv.player){
+      const x=num(sv.player.x,600),y=num(sv.player.y,1500);
+      if(this.vm.free(x,y)){p.body.reset(x,y);this.pc.anim.setPosition(x,y+24);}
+    }
 
     const cam=this.cameras.main;
-    const zoom=()=>Phaser.Math.Clamp(Math.min(this.scale.width,this.scale.height)/420,0.85,1.4);
-    cam.setBounds(0,0,W,H).startFollow(p,true,0.12,0.12).setZoom(zoom()).fadeIn(500);
-    const rz=()=>cam.setZoom(zoom());
+    cam.setBounds(0,0,W,H).startFollow(p,true,0.12,0.12).setZoom(this.zoomFn()).fadeIn(500);
+    const rz=()=>{if(!this.vm.driving)cam.setZoom(this.zoomFn());};
     this.scale.on('resize',rz);
-    this.events.once('shutdown',()=>this.scale.off('resize',rz));
+
+    if(sv&&sv.mode==='car'&&this.vm.cars[sv.car])this.vm.enter(this.vm.cars[sv.car]);
+
+    // ---------- Автосохранение ----------
+    this.saveNow=()=>{if(this.vm&&this.pc)SaveManager.save(this.snapshot());};
+    this.time.addEvent({delay:3000,loop:true,callback:this.saveNow});
+    const onVis=()=>{if(document.visibilityState==='hidden')this.saveNow();};
+    document.addEventListener('visibilitychange',onVis);
+    window.addEventListener('pagehide',this.saveNow);
+    this.events.once('shutdown',()=>{
+      this.scale.off('resize',rz);
+      document.removeEventListener('visibilitychange',onVis);
+      window.removeEventListener('pagehide',this.saveNow);
+    });
 
     this.keys=this.input.keyboard?this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,E'):null;
     this.scene.launch('UI');
+  }
+  snapshot(){
+    const p=this.pc.sprite,vm=this.vm,ui=this.scene.get('UI');
+    return{
+      mode:vm.driving?'car':'foot',
+      car:vm.cars.indexOf(vm.driving),
+      player:{x:Math.round(p.x),y:Math.round(p.y)},
+      cars:vm.cars.map(c=>({type:c.spec.id,x:Math.round(c.sprite.x),y:Math.round(c.sprite.y),h:+c.phys.heading.toFixed(3)})),
+      settings:{run:!!(ui&&ui.run)}
+    };
   }
   update(t){
     const ui=this.scene.get('UI'),k=this.keys;
@@ -213,39 +288,43 @@ class Game extends Phaser.Scene{
 class UI extends Phaser.Scene{
   constructor(){super('UI')}
   create(){
+    uiCam(this);
     this.vec=new Phaser.Math.Vector2();this.pid=null;this.run=false;
     this.input.addPointer(3);
     this.add.particles(0,0,'drop',{x:{min:-100,max:2200},y:-20,lifespan:1200,speedY:{min:600,max:800},speedX:{min:-150,max:-100},quantity:2,frequency:40,alpha:{start:0.35,end:0},blendMode:'ADD'}).setDepth(-1);
     this.base=this.add.circle(0,0,62,0x000000,0.35).setStrokeStyle(3,0x00f0ff,0.8);
     this.thumb=this.add.circle(0,0,28,0xff2bd6,0.85);
     this.hint=this.add.text(0,0,'Двигай джойстик',{fontFamily:'sans-serif',fontSize:'13px',color:'#00f0ff'}).setOrigin(.5);
-    this.add.text(16,14,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
-    this.add.text(16,44,'NEON STRIP',{fontFamily:'sans-serif',fontSize:'12px',color:'#ff2bd6'});
-    this.st=this.add.text(16,62,'IDLE',{fontFamily:'sans-serif',fontSize:'11px',color:'#7b5cff'});
+    this.title=this.add.text(0,0,'VICE BAY',{fontFamily:FONT,fontSize:'22px',color:'#ffffff'}).setShadow(0,0,'#00f0ff',10,true,true);
+    this.district=this.add.text(0,0,'NEON STRIP',{fontFamily:'sans-serif',fontSize:'12px',color:'#ff2bd6'});
+    this.st=this.add.text(0,0,'IDLE',{fontFamily:'sans-serif',fontSize:'11px',color:'#7b5cff'});
     this.mb=this.add.rectangle(0,0,84,38,0x000000,0.5).setStrokeStyle(2,0xff2bd6).setInteractive();
     this.mt=this.add.text(0,0,'MENU',{fontFamily:FONT,fontSize:'15px',color:'#ffffff'}).setOrigin(.5);
-    this.mb.on('pointerup',()=>{this.scene.stop('Game');this.scene.start('Menu');});
+    this.mb.on('pointerup',()=>{
+      const g=this.scene.get('Game');
+      if(g&&g.saveNow)g.saveNow();
+      this.scene.stop('Game');this.scene.start('Menu');
+    });
     // Кнопка WALK / RUN
     this.rb=this.add.circle(0,0,40,0x000000,0.5).setStrokeStyle(3,0x00f0ff).setInteractive();
     this.rt=this.add.text(0,0,'WALK',{fontFamily:FONT,fontSize:'14px',color:'#ffffff'}).setOrigin(.5);
-    this.rb.on('pointerdown',()=>{
-      this.run=!this.run;
-      this.rt.setText(this.run?'RUN':'WALK');
-      this.rb.setStrokeStyle(3,this.run?0xff2bd6:0x00f0ff).setFillStyle(this.run?0xff2bd6:0x000000,this.run?0.35:0.5);
-    });
+    this.rb.on('pointerdown',()=>this.setRun(!this.run));
+    const sv=SaveManager.load();
+    this.setRun(!!(sv&&sv.settings&&sv.settings.run));
 
     this.vui=new VehicleUI(this);
     this.input.on('pointerdown',(p,over)=>{
       if(over.length||this.pid!==null||(this.vui&&this.vui.mode==='car'))return;
-      if(p.x>this.scale.width*0.6)return;
-      this.pid=p.id;this.ox=p.x;this.oy=p.y;
-      this.base.setPosition(p.x,p.y);this.thumb.setPosition(p.x,p.y);
+      const x=p.x/DPR,y=p.y/DPR;
+      if(x>VW(this)*0.6)return;
+      this.pid=p.id;this.ox=x;this.oy=y;
+      this.base.setPosition(x,y);this.thumb.setPosition(x,y);
       this.base.setAlpha(1);this.thumb.setAlpha(1);
       if(this.hint.visible)this.tweens.add({targets:this.hint,alpha:0,duration:400,onComplete:()=>this.hint.setVisible(false)});
     });
     this.input.on('pointermove',p=>{
       if(p.id!==this.pid)return;
-      const dx=p.x-this.ox,dy=p.y-this.oy,d=Math.hypot(dx,dy),m=Math.min(d,62),a=Math.atan2(dy,dx);
+      const dx=p.x/DPR-this.ox,dy=p.y/DPR-this.oy,d=Math.hypot(dx,dy),m=Math.min(d,62),a=Math.atan2(dy,dx);
       this.thumb.setPosition(this.ox+Math.cos(a)*m,this.oy+Math.sin(a)*m);
       if(m<8)this.vec.set(0,0);else this.vec.set(Math.cos(a)*m/62,Math.sin(a)*m/62);
     });
@@ -255,25 +334,47 @@ class UI extends Phaser.Scene{
     this.scale.on('resize',this.layout,this);
     this.events.once('shutdown',()=>this.scale.off('resize',this.layout,this));
   }
+  setRun(v){
+    this.run=v;
+    this.rt.setText(v?'RUN':'WALK');
+    this.rb.setStrokeStyle(3,v?0xff2bd6:0x00f0ff).setFillStyle(v?0xff2bd6:0x000000,v?0.35:0.5);
+  }
   layout(){
-    const w=this.scale.width,h=this.scale.height;
-    this.mb.setPosition(w-56,34);this.mt.setPosition(w-56,34);
-    this.rb.setPosition(w-80,h-110);this.rt.setPosition(w-80,h-110);
+    const w=VW(this),h=VH(this),L=SAFE.l,R=SAFE.r,T=SAFE.t,B=SAFE.b;
+    this.title.setPosition(16+L,14+T);
+    this.district.setPosition(16+L,44+T);
+    this.st.setPosition(16+L,62+T);
+    this.mb.setPosition(w-56-R,34+T);this.mt.setPosition(w-56-R,34+T);
+    this.rb.setPosition(w-80-R,h-110-B);this.rt.setPosition(w-80-R,h-110-B);
     if(this.vui)this.vui.layout(w,h);
     if(this.pid===null){
-      this.base.setPosition(100,h-120).setAlpha(0.5);
-      this.thumb.setPosition(100,h-120).setAlpha(0.6);
+      this.base.setPosition(100+L,h-120-B).setAlpha(0.5);
+      this.thumb.setPosition(100+L,h-120-B).setAlpha(0.6);
     }
-    this.hint.setPosition(100,h-200);
+    this.hint.setPosition(100+L,h-200-B);
   }
 }
 
-new Phaser.Game({
+// ---------- Запуск: холст в плотности Retina ----------
+const box=()=>document.getElementById('game');
+const game=new Phaser.Game({
   type:Phaser.AUTO,parent:'game',backgroundColor:'#05010a',
-  scale:{mode:Phaser.Scale.RESIZE,width:window.innerWidth,height:window.innerHeight},
+  scale:{mode:Phaser.Scale.NONE,width:Math.round(box().clientWidth*DPR),height:Math.round(box().clientHeight*DPR),zoom:1/DPR},
   physics:{default:'arcade',arcade:{debug:false,fps:60}},
   scene:[Menu,Game,UI]
 });
+let rzT=0;
+const fit=()=>{
+  clearTimeout(rzT);
+  rzT=setTimeout(()=>{
+    readSafe();
+    const w=Math.round(box().clientWidth*DPR),h=Math.round(box().clientHeight*DPR);
+    if(w!==game.scale.width||h!==game.scale.height)game.scale.resize(w,h);
+    else game.scale.emit('resize',game.scale.gameSize);
+  },120);
+};
+window.addEventListener('resize',fit);
+window.addEventListener('orientationchange',fit);
 </script>
 </body>
 </html>
